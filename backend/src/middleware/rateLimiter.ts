@@ -19,6 +19,11 @@ export function createRateLimiter(config: RateLimitConfig) {
     const countKey = `rate:${config.key}:${identifier}`
 
     try {
+      // If Redis is not available (e.g. on Render Free tier), skip rate limiting
+      if (!redis) {
+        return next()
+      }
+
       // Check if blocked
       const blocked = await redis.get(blockKey)
       if (blocked) {

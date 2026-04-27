@@ -2,10 +2,16 @@ import Redis from 'ioredis'
 import dotenv from 'dotenv'
 dotenv.config()
 
-export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: 3,
-  lazyConnect: false,
-})
+const redisUrl = process.env.REDIS_URL
 
-redis.on('connect', () => console.log('✅ Redis connected'))
-redis.on('error', (err) => console.error('❌ Redis error:', err.message))
+// Only connect if URL is present, otherwise use null (fallback to memory)
+export const redis = redisUrl 
+  ? new Redis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 5000 }) 
+  : null
+
+if (redis) {
+  redis.on('connect', () => console.log('✅ Redis connected'))
+  redis.on('error', (err) => console.error('❌ Redis error:', err.message))
+} else {
+  console.log('⚠️  Redis URL missing. App will use in-memory storage.')
+}
