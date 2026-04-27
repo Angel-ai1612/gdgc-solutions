@@ -1,52 +1,62 @@
-import { useState } from 'react'
+// src/pages/SettingsPage.jsx
+import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/api'
 
-const API = import.meta.env.VITE_API_URL
 const tabs = ['Profile', 'Notifications', 'Appearance', 'Security', 'Billing']
 
 export default function SettingsPage() {
+  const { user, updateUser } = useAuth()
   const [activeTab, setActiveTab] = useState('Profile')
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user')
-    return saved ? JSON.parse(saved) : null
-  })
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState(null)
+  const [settings, setSettings] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
-  const handleSaveProfile = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage(null)
+  // Profile fields
+  const [name, setName] = useState(user?.name ?? '')
+  const [organization, setOrganization] = useState(user?.organization ?? '')
+  const [role, setRole] = useState(user?.role ?? '')
 
-    const formData = new FormData(e.target)
-    const payload = {
-      name: formData.get('name'),
-      organization: formData.get('organization'),
-      role: formData.get('role'),
-    }
+  // Password fields
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
 
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${API}/auth/me`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      })
+  useEffect(() => {
+    api.getSettings().then(r => setSettings(r.data)).catch(console.error)
+  }, [])
 
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Update failed')
-
-      localStorage.setItem('user', JSON.stringify(data.user))
-      setUser(data.user)
-      setMessage({ type: 'success', text: 'Profile updated successfully!' })
-    } catch (err) {
-      setMessage({ type: 'error', text: err.message })
-    } finally {
-      setLoading(false)
-    }
+  const save = async (fn) => {
+    setSaving(true); setSaved(false)
+    try { await fn(); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+    catch (e) { alert(e.message) }
+    finally { setSaving(false) }
   }
+
+  const saveProfile = () => save(async () => {
+    const { user: updated } = await api.updateProfile({ name, organization, role })
+    updateUser(updated)
+  })
+
+  const saveSetting = async (key, value) => {
+    const updated = { ...settings, [key]: value }
+    setSettings(updated)
+    await api.updateSettings({ [key]: value }).catch(console.error)
+  }
+
+  const savePassword = () => save(async () => {
+    if (newPw !== confirmPw) throw new Error('Passwords do not match')
+    if (newPw.length < 8) throw new Error('Password must be at least 8 characters')
+    await api.updatePassword(currentPw, newPw)
+    setCurrentPw(''); setNewPw(''); setConfirmPw('')
+  })
+
+  const Toggle = ({ settingKey }) => (
+    <label className="toggle">
+      <input type="checkbox" checked={!!settings?.[settingKey]} onChange={e => saveSetting(settingKey, e.target.checked)} />
+      <span className="toggle-slider" />
+    </label>
+  )
 
   return (
     <div>
@@ -54,190 +64,85 @@ export default function SettingsPage() {
         <h1 className="page-title">Settings</h1>
         <p className="page-subtitle">Manage your account preferences</p>
       </div>
-
       <div className="settings-tabs">
         {tabs.map(tab => (
-          <button
-            key={tab}
-            className={`settings-tab${activeTab === tab ? ' active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
+          <button key={tab} className={`settings-tab${activeTab === tab ? ' active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}</button>
         ))}
       </div>
-
       <div className="settings-section">
         {activeTab === 'Profile' && (
-          <form onSubmit={handleSaveProfile}>
+          <>
             <h3>Profile Information</h3>
-            {message && (
-              <div style={{ 
-                padding: '10px 14px', 
-                borderRadius: 8, 
-                marginBottom: 20,
-                fontSize: '0.9rem',
-                backgroundColor: message.type === 'success' ? '#f6ffed' : '#fff1f0',
-                border: `1px solid ${message.type === 'success' ? '#b7eb8f' : '#ffccc7'}`,
-                color: message.type === 'success' ? '#389e0d' : '#cf1322'
-              }}>
-                {message.text}
-              </div>
-            )}
-            <div className="form-group">
-              <label className="form-label">Full Name</label>
-              <input className="form-input" name="name" defaultValue={user?.name} required />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Email</label>
-              <input className="form-input" defaultValue={user?.email} disabled style={{ opacity: 0.7, cursor: 'not-allowed' }} title="Email cannot be changed" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Organization</label>
-              <input className="form-input" name="organization" defaultValue={user?.organization || ''} placeholder="e.g. SpoProof Inc." />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Role</label>
-              <input className="form-input" name="role" defaultValue={user?.role || ''} placeholder="e.g. Content Moderator" />
-            </div>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Saving...' : 'Save Changes'}
-            </button>
-          </form>
+            <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={user?.email ?? ''} disabled style={{ opacity: 0.6 }} /></div>
+            <div className="form-group"><label className="form-label">Organization</label><input className="form-input" value={organization} onChange={e => setOrganization(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Role</label><input className="form-input" value={role} onChange={e => setRole(e.target.value)} /></div>
+            <button className="btn btn-primary" onClick={saveProfile} disabled={saving}>{saving ? 'Saving...' : saved ? '✓ Saved' : 'Save Changes'}</button>
+          </>
         )}
-
-        {activeTab === 'Notifications' && (
+        {activeTab === 'Notifications' && settings && (
           <>
             <h3>Notification Preferences</h3>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Email Notifications</h4>
-                <p>Receive verification results via email</p>
+            {[['email_notifications','Email Notifications','Receive verification results via email'],
+              ['alert_notifications','Alert Notifications','Get notified about high-risk content'],
+              ['weekly_reports','Weekly Reports','Receive a weekly summary of your activity'],
+              ['marketing_emails','Marketing Emails','Product updates and feature announcements'],
+            ].map(([key, title, desc]) => (
+              <div key={key} className="settings-row">
+                <div className="settings-row-left"><h4>{title}</h4><p>{desc}</p></div>
+                <Toggle settingKey={key} />
               </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Alert Notifications</h4>
-                <p>Get notified about high-risk content</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Weekly Reports</h4>
-                <p>Receive a weekly summary of your activity</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Marketing Emails</h4>
-                <p>Product updates and feature announcements</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+            ))}
           </>
         )}
-
-        {activeTab === 'Appearance' && (
+        {activeTab === 'Appearance' && settings && (
           <>
             <h3>Appearance</h3>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Dark Mode</h4>
-                <p>Use dark theme across the application</p>
+            {[['dark_mode','Dark Mode','Use dark theme across the application'],
+              ['compact_view','Compact View','Reduce spacing in tables and lists'],
+              ['animations','Animations','Enable motion and transition effects'],
+            ].map(([key, title, desc]) => (
+              <div key={key} className="settings-row">
+                <div className="settings-row-left"><h4>{title}</h4><p>{desc}</p></div>
+                <Toggle settingKey={key} />
               </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Compact View</h4>
-                <p>Reduce spacing in tables and lists</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Animations</h4>
-                <p>Enable motion and transition effects</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+            ))}
           </>
         )}
-
         {activeTab === 'Security' && (
           <>
             <h3>Security</h3>
-            <div className="form-group">
-              <label className="form-label">Current Password</label>
-              <input className="form-input" type="password" placeholder="••••••••" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">New Password</label>
-              <input className="form-input" type="password" placeholder="••••••••" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Confirm New Password</label>
-              <input className="form-input" type="password" placeholder="••••••••" />
-            </div>
-            <button className="btn btn-primary" style={{ marginBottom: 32 }}>Update Password</button>
-
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Two-Factor Authentication</h4>
-                <p>Add an extra layer of security to your account</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-left">
-                <h4>Login Alerts</h4>
-                <p>Get notified of new device sign-ins</p>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+            <div className="form-group"><label className="form-label">Current Password</label><input className="form-input" type="password" placeholder="••••••••" value={currentPw} onChange={e => setCurrentPw(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">New Password</label><input className="form-input" type="password" placeholder="••••••••" value={newPw} onChange={e => setNewPw(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Confirm New Password</label><input className="form-input" type="password" placeholder="••••••••" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} /></div>
+            <button className="btn btn-primary" onClick={savePassword} disabled={saving} style={{ marginBottom: 32 }}>{saving ? 'Updating...' : saved ? '✓ Updated' : 'Update Password'}</button>
+            {settings && <>
+              {[['two_factor','Two-Factor Authentication','Add an extra layer of security'],
+                ['login_alerts','Login Alerts','Get notified of new device sign-ins'],
+              ].map(([key, title, desc]) => (
+                <div key={key} className="settings-row">
+                  <div className="settings-row-left"><h4>{title}</h4><p>{desc}</p></div>
+                  <Toggle settingKey={key} />
+                </div>
+              ))}
+            </>}
           </>
         )}
-
         {activeTab === 'Billing' && (
           <>
             <h3>Billing & Plan</h3>
             <div className="card" style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: 4 }}>Pro Plan</h4>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>Unlimited verifications • Priority support • API access</p>
+                  <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: 4 }}>{user?.plan === 'pro' ? 'Pro' : 'Free'} Plan</h4>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                    {user?.plan === 'pro' ? 'Unlimited verifications • Priority support • API access' : 'Limited verifications • Standard support'}
+                  </p>
                 </div>
-                <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>$49<span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)' }}>/mo</span></span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>{user?.plan === 'pro' ? '$49' : 'Free'}<span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)' }}>{user?.plan === 'pro' ? '/mo' : ''}</span></div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-4)', marginTop: 4 }}>Credits remaining: <strong style={{ color: 'var(--accent-text)' }}>{user?.credits ?? 0}</strong></div>
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12 }}>

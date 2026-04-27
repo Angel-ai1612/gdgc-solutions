@@ -48,22 +48,44 @@ export async function googleCallback(req: Request, res: Response) {
     })
 
     let userId: string
-    if (authError?.message?.includes('already registered')) {
-      const { data: existing } = await supabase.auth.admin.listUsers()
-      const found = existing?.users?.find(u => u.email === email)
-      if (!found) return res.redirect(`${FRONTEND_URL}/auth?error=user_lookup_failed`)
-      userId = found.id
+    if (authError) {
+      console.log('Supabase Admin CreateUser Info/Error:', authError.message)
+      
+      // Handle existing users (broaden the check)
+      const msg = authError.message.toLowerCase()
+      if (msg.includes('registered') || msg.includes('exists') || msg.includes('already')) {
+        const { data: existing, error: listError } = await supabase.auth.admin.listUsers()
+        if (listError) {
+          console.error('Supabase Admin ListUsers Error:', listError.message)
+          return res.redirect(`${FRONTEND_URL}/auth?error=user_lookup_failed`)
+        }
+        const found = existing?.users?.find(u => u.email === email)
+        if (!found) {
+          console.error('User not found in list after "already registered" error')
+          return res.redirect(`${FRONTEND_URL}/auth?error=user_lookup_failed`)
+        }
+        userId = found.id
+      } else {
+        console.error('Supabase Admin CreateUser Fatal Error:', authError.message)
+        return res.redirect(`${FRONTEND_URL}/auth?error=auth_failed&detail=${encodeURIComponent(authError.message)}`)
+      }
     } else if (authUser?.user) {
       userId = authUser.user.id
     } else {
+      console.error('Google OAuth: No authUser returned and no clear error')
       return res.redirect(`${FRONTEND_URL}/auth?error=auth_failed`)
     }
 
     // Upsert public.users
-    await supabase.from('users').upsert({
+    const { error: upsertError } = await supabase.from('users').upsert({
       id: userId, email, name: name ?? email.split('@')[0],
       avatar_url: picture, provider: 'google', credits: DEFAULT_CREDITS,
     }, { onConflict: 'id', ignoreDuplicates: false })
+
+    if (upsertError) {
+      console.error('Public Users Upsert Error:', upsertError.message)
+      return res.redirect(`${FRONTEND_URL}/auth?error=db_upsert_failed`)
+    }
 
     // Upsert user_settings
     await supabase.from('user_settings').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true })
@@ -71,7 +93,7 @@ export async function googleCallback(req: Request, res: Response) {
     const token = signJWT({ userId, email })
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
   } catch (err: any) {
-    console.error('Google OAuth error:', err.message)
+    console.error('Google OAuth Critical Error:', err.message, err.stack)
     res.redirect(`${FRONTEND_URL}/auth?error=oauth_failed`)
   }
 }

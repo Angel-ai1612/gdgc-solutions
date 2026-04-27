@@ -45,9 +45,51 @@ export function computeVerificationResult(
   fileSize?: number,
   submittedUrl?: string,
 ): VerificationResult {
-  const raw = NEUTRAL_BASE + source.score + hash.score + metadata.score + (deepfake?.score ?? 0) + (reverseImage?.score ?? 0) + (factCheck?.score ?? 0)
-  const trustScore = clamp(raw, 0, 100)
+  // 1. Calculate Base Score
+  let score = NEUTRAL_BASE + source.score + hash.score
+  
+  // 1b. Fact-Check Boost (HUGE PRIORITY)
+  if (factCheck?.verdict === 'confirmed') {
+    score += 50
+    console.log('[Scoring] Event CONFIRMED by Fact-Check. Adding +50 points.')
+  } else if (factCheck?.verdict === 'contradicted') {
+    score -= 50
+  }
+  
+  // 2. Metadata Boost
+  if (metadata.verdict === 'present') score += 40
+  else if (metadata.verdict === 'anomaly') score -= 30
+
+  // 3. Media-Specific Signals
+  if (deepfake) score += deepfake.score
+  if (reverseImage) score += reverseImage.score
+
+  // 4. PRODUCTION OVERRIDES (Precision Logic)
+  let isCriticallyFailed = false
+  
+  // If Bitmind says deepfake, but Gemini says it's a real sports event, we reduce the penalty
+  const isFactConfirmed = factCheck?.verdict === 'confirmed'
+  
+  if (deepfake?.verdict === 'likely_manipulated') {
+    if (isFactConfirmed) {
+      console.log('[Scoring] Deepfake signal detected, but Fact-Check confirmed the event. Reducing penalty.')
+      score = Math.max(score, 45) // Boost to 'Suspicious' instead of 'Fake'
+    } else {
+      isCriticallyFailed = true
+    }
+  }
+
+  if (hash.verdict === 'match_manipulated') isCriticallyFailed = true
+  if (reverseImage?.verdict === 'manipulated_copy_found') isCriticallyFailed = true
+
+  if (isCriticallyFailed) {
+    score = Math.min(score, 25) // Cap at 25% (Fake)
+  }
+
+  const trustScore = clamp(score, 0, 100)
   const status = deriveStatus(trustScore)
+
+  console.log(`[ProductionScoring] Result:${status} Score:${trustScore} (CriticalFail:${isCriticallyFailed})`)
 
   // Map to the exact metrics the ResultPage.jsx expects
   const authenticity = trustScore

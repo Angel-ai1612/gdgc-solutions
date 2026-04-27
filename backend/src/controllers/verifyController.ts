@@ -129,7 +129,7 @@ export async function handleVerify(req: Request, res: Response) {
     )
 
     // ── Persist to DB ─────────────────────────────────────────────────────────
-    await supabase.from('verifications').insert({
+    const { error: dbError } = await supabase.from('verifications').insert({
       id: result.id,
       user_id: result.userId,
       status: result.status,
@@ -143,6 +143,12 @@ export async function handleVerify(req: Request, res: Response) {
       recommendation: result.recommendation,
       credits_used: VERIFY_COST,
     })
+
+    if (dbError) {
+      console.error('❌ Database Save Error:', dbError.message, dbError.details)
+    } else {
+      console.log('✅ Verification saved to database.')
+    }
 
     return res.status(200).json({
       success: true,

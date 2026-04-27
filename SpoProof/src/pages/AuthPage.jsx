@@ -1,50 +1,46 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { ShieldCheck, Eye, EyeOff } from 'lucide-react'
-
-const API = import.meta.env.VITE_API_URL
+// src/pages/AuthPage.jsx
+import { useState, useEffect } from 'react'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { ShieldCheck, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/api'
 
 export default function AuthPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { login, register, user } = useAuth()
+
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
+
+  // Already logged in → redirect
+  useEffect(() => { if (user) navigate('/app/dashboard') }, [user])
+
+  // OAuth error from callback
+  useEffect(() => {
+    const err = searchParams.get('error')
+    if (err) setError(`Sign-in failed: ${err.replace(/_/g, ' ')}`)
+  }, [searchParams])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
     setLoading(true)
-    setError(null)
-
-    const endpoint = isLogin ? '/auth/login' : '/auth/register'
-    const body = isLogin 
-      ? { email, password }
-      : { name, email, password }
-
     try {
-      const res = await fetch(`${API}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Authentication failed')
+      if (isLogin) {
+        await login(email, password)
+      } else {
+        if (!name.trim()) { setError('Name is required'); setLoading(false); return }
+        await register(name, email, password)
       }
-
-      // Success
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
-      
       navigate('/app/dashboard')
     } catch (err) {
-      setError(err.message)
-      console.error('Auth error:', err)
+      setError(err.message || 'Authentication failed')
     } finally {
       setLoading(false)
     }
@@ -62,13 +58,23 @@ export default function AuthPage() {
           </Link>
           <h1>{isLogin ? 'Welcome back' : 'Create account'}</h1>
           <p className="subtitle">
-            {isLogin
-              ? 'Sign in to your dashboard'
-              : 'Start verifying sports media'}
+            {isLogin ? 'Sign in to your dashboard' : 'Start verifying sports media'}
           </p>
         </div>
 
-        <button className="auth-google-btn">
+        {error && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 12px', marginBottom: 16,
+            background: 'var(--red-muted)', border: '1px solid rgba(239,68,68,0.2)',
+            borderRadius: 'var(--r-md)', fontSize: 'var(--text-sm)', color: 'var(--red-text)',
+          }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+
+        {/* Google OAuth */}
+        <button className="auth-google-btn" onClick={() => api.googleLogin()} disabled={loading}>
           <svg width="16" height="16" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -80,48 +86,17 @@ export default function AuthPage() {
 
         <div className="auth-divider">or</div>
 
-        {error && (
-          <div style={{ 
-            color: '#ff4d4f', 
-            backgroundColor: '#fff1f0', 
-            border: '1px solid #ffccc7', 
-            padding: '8px 12px', 
-            borderRadius: 6, 
-            marginBottom: 20,
-            fontSize: 14,
-            textAlign: 'center'
-          }}>
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit}>
           {!isLogin && (
             <div className="form-group">
               <label className="form-label">Full Name</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+              <input type="text" className="form-input" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
             </div>
           )}
-
           <div className="form-group">
             <label className="form-label">Email</label>
-            <input
-              type="email"
-              className="form-input"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+            <input type="email" className="form-input" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
           </div>
-
           <div className="form-group">
             <label className="form-label">Password</label>
             <div style={{ position: 'relative' }}>
@@ -130,46 +105,27 @@ export default function AuthPage() {
                 className="form-input"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 style={{ paddingRight: 40 }}
                 required
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute', right: 10, top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer'
-                }}
-              >
+              <button type="button" onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer' }}>
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
           </div>
-
-          {isLogin && (
-            <div className="auth-forgot">
-              <a href="#">Forgot password?</a>
-            </div>
-          )}
-
-          <button 
-            type="submit" 
-            className="btn btn-primary" 
-            style={{ width: '100%', opacity: loading ? 0.7 : 1 }}
-            disabled={loading}
-          >
-            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+          {isLogin && <div className="auth-forgot"><a href="#">Forgot password?</a></div>}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+            {loading ? 'Please wait...' : isLogin ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
         <div className="auth-footer">
-          {isLogin ? (
-            <>Don't have an account? <a href="#" onClick={(e) => { e.preventDefault(); setIsLogin(false) }}>Sign up</a></>
-          ) : (
-            <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); setIsLogin(true) }}>Sign in</a></>
-          )}
+          {isLogin
+            ? <>Don't have an account? <a href="#" onClick={e => { e.preventDefault(); setIsLogin(false); setError('') }}>Sign up</a></>
+            : <>Already have an account? <a href="#" onClick={e => { e.preventDefault(); setIsLogin(true); setError('') }}>Sign in</a></>
+          }
         </div>
       </div>
     </div>

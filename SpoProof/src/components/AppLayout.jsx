@@ -1,24 +1,11 @@
-import { useState } from 'react'
+// src/components/AppLayout.jsx
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import {
-  ShieldCheck, LayoutDashboard, ScanSearch, FileText,
-  Award, Bell, Settings, Search, LogOut
-} from 'lucide-react'
+import { ShieldCheck, LayoutDashboard, ScanSearch, FileText, Award, Bell, Settings, Search, LogOut, Coins } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 export default function AppLayout() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user')
-    return saved ? JSON.parse(saved) : null
-  })
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    navigate('/auth')
-  }
-
-  const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'
+  const { user, logout } = useAuth()
 
   const sidebarLinks = [
     { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -28,6 +15,10 @@ export default function AppLayout() {
     { to: '/app/alerts', icon: Bell, label: 'Alerts' },
     { to: '/app/settings', icon: Settings, label: 'Settings' },
   ]
+
+  const handleLogout = () => { logout(); navigate('/') }
+  const initial = user?.name?.[0]?.toUpperCase() ?? 'U'
+  const creditColor = user?.credits <= 2 ? 'var(--red-text)' : user?.credits <= 5 ? 'var(--amber-text)' : 'var(--green-text)'
 
   return (
     <div className="app-layout">
@@ -42,22 +33,25 @@ export default function AppLayout() {
         </div>
         <nav className="sidebar-nav">
           {sidebarLinks.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
-            >
-              <Icon size={16} />
-              {label}
+            <NavLink key={to} to={to} className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
+              <Icon size={16} /> {label}
             </NavLink>
           ))}
           <div style={{ flex: 1 }} />
-          <button
-            className="sidebar-link"
-            onClick={handleLogout}
-          >
-            <LogOut size={16} />
-            Log Out
+          {/* Credits display */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+            background: 'var(--bg-2)', borderRadius: 'var(--r-md)',
+            border: '1px solid var(--border-1)', margin: '4px 0',
+          }}>
+            <Coins size={14} style={{ color: creditColor }} />
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-3)' }}>Credits:</span>
+            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: creditColor, marginLeft: 'auto' }}>
+              {user?.credits ?? 0}
+            </span>
+          </div>
+          <button className="sidebar-link" onClick={handleLogout}>
+            <LogOut size={16} /> Log Out
           </button>
         </nav>
       </aside>
@@ -69,18 +63,13 @@ export default function AppLayout() {
             <input type="text" placeholder="Search..." />
           </div>
           <div className="topbar-right">
-            <div style={{ marginRight: 12, textAlign: 'right', display: 'none', sm: 'block' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user?.name || 'User'}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-4)' }}>{user?.credits || 0} Credits</div>
-            </div>
-            <button className="btn-icon">
+            <button className="btn-icon" onClick={() => navigate('/app/alerts')}>
               <Bell size={16} />
             </button>
-            <div className="topbar-avatar" title={user?.name}>
-              {user?.avatar_url ? (
-                <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
-              ) : initials}
-            </div>
+            {user?.avatar_url
+              ? <img src={user.avatar_url} alt={user.name} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--border-2)' }} />
+              : <div className="topbar-avatar">{initial}</div>
+            }
           </div>
         </div>
         <div className="app-content">

@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
 import { VerificationResult, ChatMessage } from '../types'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
@@ -39,18 +39,38 @@ export async function chatWithGemini(
   history: ChatMessage[]
 ): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash', // Updated for your 2.0 key
     systemInstruction: buildSystemContext(result),
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    ],
   })
 
   const chat = model.startChat({
-    history: history.map(m => ({
-      role: m.role,
-      parts: [{ text: m.content }],
-    })),
+    history: history
+      .filter(m => m.role === 'user' || m.role === 'model')
+      .map(m => ({
+        role: m.role as 'user' | 'model',
+        parts: [{ text: m.content }],
+      })),
     generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
   })
 
-  const response = await chat.sendMessage(userMessage)
-  return response.response.text()
+  try {
+    const response = await chat.sendMessage(userMessage)
+    return response.response.text()
+  } catch (err: any) {
+    console.log('Gemini Error:', err.status, err.message)
+    // Fallback if 2.0 is not available or returns 404
+    if (err.status === 404 || err.message?.includes('404') || err.message?.includes('not found')) {
+      console.log('Gemini 2.0 not available, falling back to Gemini Pro...')
+      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' })
+      const fallbackResponse = await fallbackModel.generateContent(`CONTEXT: ${buildSystemContext(result)}\n\nUSER MESSAGE: ${userMessage}`)
+      return fallbackResponse.response.text()
+    }
+    throw err
+  }
 }

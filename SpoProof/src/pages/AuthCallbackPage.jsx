@@ -1,41 +1,49 @@
+// src/pages/AuthCallbackPage.jsx
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ShieldCheck } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 export default function AuthCallbackPage() {
   const navigate = useNavigate()
+  const { loginWithToken } = useAuth()
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const token = params.get('token')
-    const userStr = params.get('user')
-    
-    if (token) {
-      localStorage.setItem('token', token)
-      if (userStr) {
-        try {
-          localStorage.setItem('user', decodeURIComponent(userStr))
-        } catch (e) {
-          console.error('Error parsing user data:', e)
-        }
-      }
-      navigate('/app/dashboard')
-    } else {
-      navigate('/auth?error=callback_failed')
+    const error = params.get('error')
+
+    if (error) {
+      navigate(`/auth?error=${error}`)
+      return
     }
-  }, [navigate])
-  
+
+    if (token) {
+      loginWithToken(token)
+      setTimeout(() => navigate('/app/dashboard'), 800)
+    } else {
+      navigate('/auth?error=missing_token')
+    }
+  }, [])
+
   return (
-    <div style={{ 
-      height: '100vh', 
-      display: 'flex', 
-      flexDirection: 'column',
-      alignItems: 'center', 
-      justifyContent: 'center',
-      background: 'var(--bg-1)',
-      color: 'var(--text-1)'
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg-0)', gap: 20,
     }}>
-      <div className="analysis-spinner" style={{ marginBottom: 20 }} />
-      <h2>Signing you in...</h2>
-      <p style={{ color: 'var(--text-3)', marginTop: 10 }}>Please wait while we finalize your authentication.</p>
+      <div style={{
+        width: 48, height: 48, background: 'var(--accent)',
+        borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <ShieldCheck size={24} color="#fff" />
+      </div>
+      <div style={{ textAlign: 'center' }}>
+        <div className="analysis-spinner" style={{ margin: '0 auto 12px' }} />
+        <p style={{ color: 'var(--text-3)', fontSize: 'var(--text-sm)' }}>
+          Signing you in to SpoProof...
+        </p>
+      </div>
     </div>
   )
 }

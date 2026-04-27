@@ -1,95 +1,100 @@
+// src/pages/VerifyPage.jsx
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Upload, Image, Video, Camera, FileText, Link as LinkIcon
-} from 'lucide-react'
+import { Upload, Image, Video, Camera, FileText, Link as LinkIcon, AlertCircle } from 'lucide-react'
+import { api } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 
 const uploadTypes = [
   { id: 'image', label: 'Image', icon: Image },
   { id: 'video', label: 'Video', icon: Video },
   { id: 'screenshot', label: 'Screenshot', icon: Camera },
   { id: 'article', label: 'Article', icon: FileText },
-  { id: 'url', label: 'URL', icon: LinkIcon },
+  { id: 'url', label: 'URL / Social', icon: LinkIcon },
 ]
 
 const analysisSteps = [
   { title: 'Checking metadata...', subtitle: 'Extracting EXIF data and file properties' },
-  { title: 'Scanning for edits...', subtitle: 'Analyzing pixel patterns and compression artifacts' },
-  { title: 'Comparing sources...', subtitle: 'Cross-referencing with known databases' },
-  { title: 'Generating report...', subtitle: 'Compiling results and calculating trust score' },
+  { title: 'Scanning for deepfakes...', subtitle: 'Running Bitmind AI analysis' },
+  { title: 'Comparing sources...', subtitle: 'Reverse image search + fact checking' },
+  { title: 'Generating trust score...', subtitle: 'Compiling all signals into final verdict' },
 ]
 
-const API = import.meta.env.VITE_API_URL
+const SOCIAL_DOMAINS = ['instagram.com', 'tiktok.com', 'twitter.com', 'x.com', 'facebook.com', 'youtube.com', 'youtu.be', 'reddit.com']
+
+function isSocial(url) {
+  try { return SOCIAL_DOMAINS.some(d => new URL(url).hostname.includes(d)) }
+  catch { return false }
+}
 
 export default function VerifyPage() {
   const navigate = useNavigate()
+  const { user, updateUser } = useAuth()
+
   const [selectedType, setSelectedType] = useState('image')
   const [dragOver, setDragOver] = useState(false)
   const [file, setFile] = useState(null)
+  const [urlInput, setUrlInput] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [progress, setProgress] = useState(0)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
 
   const handleDrop = useCallback((e) => {
-    e.preventDefault()
-    setDragOver(false)
-    const droppedFile = e.dataTransfer.files[0]
-    if (droppedFile) setFile(droppedFile)
+    e.preventDefault(); setDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) { setFile(f); setSelectedType(f.type.startsWith('video/') ? 'video' : 'image') }
   }, [])
 
   const handleFileInput = (e) => {
-    if (e.target.files[0]) setFile(e.target.files[0])
+    const f = e.target.files[0]
+    if (f) { setFile(f); setSelectedType(f.type.startsWith('video/') ? 'video' : 'image') }
   }
 
-  const handleAnalyze = async () => {
-    if (!file) return
+  const canAnalyze = file || (selectedType === 'url' && urlInput.trim())
 
+  const handleAnalyze = async () => {
+    if (!canAnalyze) return
+    if ((user?.credits ?? 0) < 1) {
+      setError('Not enough credits to run a verification.')
+      return
+    }
+
+    setError('')
     setAnalyzing(true)
     setCurrentStep(0)
     setProgress(0)
-    setError(null)
 
-    // Progress simulation for UI feel
+    // Animate steps while API runs
     const stepInterval = setInterval(() => {
-      setProgress(prev => Math.min(prev + 5, 90))
-    }, 200)
+      setCurrentStep(prev => {
+        const next = prev + 1
+        setProgress((next / analysisSteps.length) * 85)
+        return next < analysisSteps.length - 1 ? next : prev
+      })
+    }, 1800)
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('type', selectedType)
-
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${API}/verify`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Verification failed')
-      }
+      const payload = file || urlInput.trim()
+      const result = await api.verify(payload, selectedType)
 
       clearInterval(stepInterval)
       setProgress(100)
-      
-      // Save result to session storage or pass via state
-      sessionStorage.setItem('lastVerification', JSON.stringify(data.data))
-      
-      setTimeout(() => {
-        navigate('/app/result')
-      }, 600)
 
+      // Update credit count in UI
+      if (result.creditsRemaining !== undefined) {
+        updateUser({ credits: result.creditsRemaining })
+      }
+
+      setTimeout(() => {
+        navigate('/app/result', { state: { result: result.data } })
+      }, 500)
     } catch (err) {
       clearInterval(stepInterval)
       setAnalyzing(false)
-      setError(err.message)
-      console.error('Verification error:', err)
+      setError(err.status === 402
+        ? `Not enough credits. You have ${user?.credits ?? 0} remaining.`
+        : err.message || 'Verification failed. Please try again.')
     }
   }
 
@@ -97,62 +102,92 @@ export default function VerifyPage() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Verify Media</h1>
-        <p className="page-subtitle">Upload sports media to check its authenticity</p>
+        <p className="page-subtitle">Upload sports media or paste a URL — including Instagram, TikTok, YouTube</p>
       </div>
 
-      {/* Upload Zone */}
-      <div
-        className={`upload-zone${dragOver ? ' drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => document.getElementById('file-input').click()}
-      >
-        <input
-          id="file-input"
-          type="file"
-          style={{ display: 'none' }}
-          onChange={handleFileInput}
-          accept="image/*,video/*,.pdf,.doc,.docx"
-        />
-        <div className="upload-zone-icon">
-          <Upload size={32} />
+      {/* Credit warning */}
+      {(user?.credits ?? 0) <= 2 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 20,
+          background: 'var(--amber-muted)', border: '1px solid rgba(234,179,8,0.2)',
+          borderRadius: 'var(--r-md)', fontSize: 'var(--text-sm)', color: 'var(--amber-text)',
+        }}>
+          <AlertCircle size={14} />
+          {user?.credits === 0 ? 'No credits remaining — you cannot run more verifications.' : `Low credits: ${user?.credits} remaining.`}
         </div>
-        <h3>{file ? file.name : 'Drag & drop your file here'}</h3>
-        <p>{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB — Ready to analyze` : 'or click to browse files'}</p>
-      </div>
+      )}
 
-      {/* Upload Type Selection */}
+      {error && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 20,
+          background: 'var(--red-muted)', border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 'var(--r-md)', fontSize: 'var(--text-sm)', color: 'var(--red-text)',
+        }}>
+          <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      {/* Upload Zone — hidden for URL type */}
+      {selectedType !== 'url' && (
+        <div
+          className={`upload-zone${dragOver ? ' drag-over' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => document.getElementById('file-input').click()}
+        >
+          <input id="file-input" type="file" style={{ display: 'none' }} onChange={handleFileInput}
+            accept="image/*,video/*,.pdf,.doc,.docx" />
+          <div className="upload-zone-icon"><Upload size={32} /></div>
+          <h3>{file ? file.name : 'Drag & drop your file here'}</h3>
+          <p>{file
+            ? `${(file.size / 1024 / 1024).toFixed(2)} MB — Ready to analyze`
+            : 'or click to browse — images, videos, screenshots, articles'
+          }</p>
+        </div>
+      )}
+
+      {/* URL Input */}
+      {selectedType === 'url' && (
+        <div style={{ maxWidth: 600, margin: '0 auto' }}>
+          <input
+            className="form-input"
+            placeholder="Paste URL — instagram.com, tiktok.com, youtube.com, twitter.com or any direct media link..."
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            style={{ fontSize: 'var(--text-sm)' }}
+          />
+          {urlInput && isSocial(urlInput) && (
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--accent-text)', marginTop: 6 }}>
+              ✓ Social media URL detected — we'll extract the media automatically
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Type selector */}
       <div className="upload-types">
         {uploadTypes.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
+          <button key={id}
             className={`upload-type${selectedType === id ? ' selected' : ''}`}
-            onClick={() => setSelectedType(id)}
-          >
+            onClick={() => { setSelectedType(id); setFile(null) }}>
             <Icon size={16} /> {label}
           </button>
         ))}
       </div>
 
-      {/* URL Input for URL type */}
-      {selectedType === 'url' && (
-        <div style={{ maxWidth: 600, margin: '24px auto 0' }}>
-          <input
-            className="form-input"
-            placeholder="Paste media URL here..."
-            onChange={() => setFile({ name: 'URL submission', size: 0 })}
-          />
-        </div>
-      )}
+      {/* Cost info */}
+      <p style={{ textAlign: 'center', marginTop: 12, fontSize: 'var(--text-xs)', color: 'var(--text-4)' }}>
+        1 credit per verification · {user?.credits ?? 0} credits remaining
+      </p>
 
-      {/* Analyze Button */}
-      <div style={{ textAlign: 'center', marginTop: 32 }}>
+      {/* Analyze */}
+      <div style={{ textAlign: 'center', marginTop: 28 }}>
         <button
           className="btn btn-primary btn-lg"
           onClick={handleAnalyze}
-          disabled={!file}
-          style={{ opacity: file ? 1 : 0.5 }}
+          disabled={!canAnalyze || analyzing || (user?.credits ?? 0) < 1}
+          style={{ opacity: canAnalyze && (user?.credits ?? 0) >= 1 ? 1 : 0.5 }}
         >
           Analyze Now
         </button>
@@ -162,35 +197,12 @@ export default function VerifyPage() {
       {analyzing && (
         <div className="analysis-overlay">
           <div className="analysis-card">
-            {error ? (
-              <>
-                <div style={{ color: '#ff4d4f', marginBottom: 16, fontWeight: 'bold' }}>Error</div>
-                <div className="analysis-step">{error}</div>
-                <button 
-                  className="btn btn-primary" 
-                  style={{ marginTop: 20 }}
-                  onClick={() => setAnalyzing(false)}
-                >
-                  Try Again
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="analysis-spinner" />
-                <div className="analysis-step">
-                  {analysisSteps[currentStep]?.title}
-                </div>
-                <div className="analysis-substep">
-                  {analysisSteps[currentStep]?.subtitle}
-                </div>
-                <div className="analysis-progress">
-                  <div
-                    className="analysis-progress-bar"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </>
-            )}
+            <div className="analysis-spinner" />
+            <div className="analysis-step">{analysisSteps[currentStep]?.title}</div>
+            <div className="analysis-substep">{analysisSteps[currentStep]?.subtitle}</div>
+            <div className="analysis-progress">
+              <div className="analysis-progress-bar" style={{ width: `${progress}%` }} />
+            </div>
           </div>
         </div>
       )}
