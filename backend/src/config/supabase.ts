@@ -3,10 +3,10 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 const url = process.env.SUPABASE_URL!
-const serviceKey = process.env.SUPABASE_SERVICE_KEY!
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 if (!url || !serviceKey) {
-  throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env')
+  console.warn('⚠️  Supabase environment variables missing. Database will not be functional.')
 }
 
 // Use service role key on backend — bypasses RLS for trusted server operations
