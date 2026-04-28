@@ -98,6 +98,9 @@ export async function googleCallback(req: Request, res: Response) {
     const token = signJWT({ userId, email })
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
   } catch (err: any) {
+    if (err.response?.data) {
+      console.error('GOOGLE ERROR DETAIL:', JSON.stringify(err.response.data))
+    }
     console.error('Google OAuth Critical Error:', err.message, err.stack)
     res.redirect(`${FRONTEND_URL}/auth?error=oauth_failed`)
   }
