@@ -50,7 +50,7 @@ export async function googleCallback(req: Request, res: Response) {
     let userId: string
     if (authError) {
       console.log('Supabase Admin CreateUser Info/Error:', authError.message)
-      
+
       // Handle existing users (broaden the check)
       const msg = authError.message.toLowerCase()
       if (msg.includes('registered') || msg.includes('exists') || msg.includes('already')) {

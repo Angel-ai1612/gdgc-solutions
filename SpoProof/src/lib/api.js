@@ -1,7 +1,10 @@
 // src/lib/api.js
 // ─── Central API client for SpoProof frontend ────────────────────────────────
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+let baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+if (!baseUrl.endsWith('/api')) baseUrl += '/api';
+const BASE = baseUrl;
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 export const getToken = () => localStorage.getItem('spoproof_token')
