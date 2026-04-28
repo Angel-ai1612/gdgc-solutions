@@ -17,7 +17,12 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet())
 app.use(cors({
-  origin: [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'],
+  origin: [
+    'https://gdgc-solutions.vercel.app',
+    process.env.FRONTEND_URL || '',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ].filter(Boolean) as string[],
   credentials: true,
 }))
 app.use(express.json({ limit: '10mb' }))
