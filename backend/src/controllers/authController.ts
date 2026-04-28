@@ -29,9 +29,14 @@ export async function googleCallback(req: Request, res: Response) {
 
   try {
     // Exchange code for tokens
-    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
-      code, client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_CALLBACK_URL, grant_type: 'authorization_code',
+    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', new URLSearchParams({
+      code: code as string,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: GOOGLE_CALLBACK_URL,
+      grant_type: 'authorization_code',
+    }).toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     const { access_token } = tokenRes.data
 
