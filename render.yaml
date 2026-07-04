@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: spoproof-backend
+    runtime: docker
+    repo: https://github.com/Angel-ai1612/gdgc-solutions.git
+    branch: main
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        value: https://spoproof.vercel.app
+      - key: DEFAULT_CREDITS
+        value: 10
+      - key: VERIFY_CREDIT_COST
+        value: 1
+      - key: GEMINI_CHAT_CREDIT_COST
+        value: 1
+      - key: MAX_FILE_SIZE_MB
+        value: 100
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: BITMIND_API_KEY
+        sync: false
+      - key: GOOGLE_SEARCH_API_KEY
+        sync: false
+      - key: GOOGLE_SEARCH_CX
+        sync: false
+      - key: ZENSERP_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
