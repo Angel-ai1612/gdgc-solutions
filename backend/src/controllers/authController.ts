@@ -12,6 +12,10 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 
 export function googleRedirect(_req: Request, res: Response) {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CALLBACK_URL) {
+    return res.status(503).json({ error: 'oauth_not_configured', message: 'Google OAuth is not configured.' })
+  }
+
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: GOOGLE_CALLBACK_URL,
@@ -26,6 +30,9 @@ export function googleRedirect(_req: Request, res: Response) {
 export async function googleCallback(req: Request, res: Response) {
   const { code } = req.query
   if (!code) return res.redirect(`${FRONTEND_URL}/auth?error=missing_code`)
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_CALLBACK_URL) {
+    return res.redirect(`${FRONTEND_URL}/auth?error=oauth_not_configured`)
+  }
 
   try {
     // Exchange code for tokens
@@ -111,13 +118,18 @@ export async function googleCallback(req: Request, res: Response) {
 export async function emailRegister(req: Request, res: Response) {
   const { email, password, name } = req.body
   if (!email || !password || !name) return res.status(400).json({ error: 'missing_fields', message: 'email, password, and name are required' })
+  if (typeof email !== 'string' || typeof password !== 'string' || typeof name !== 'string') {
+    return res.status(400).json({ error: 'invalid_fields', message: 'email, password, and name must be strings' })
+  }
+  if (password.length < 8) return res.status(400).json({ error: 'weak_password', message: 'Password must be at least 8 characters.' })
 
   const { data, error } = await supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } })
   if (error) return res.status(400).json({ error: 'registration_failed', message: error.message })
 
   const userId = data.user!.id
-  await supabase.from('users').insert({ id: userId, email, name, provider: 'email', credits: DEFAULT_CREDITS })
-  await supabase.from('user_settings').insert({ user_id: userId })
+  const { error: userError } = await supabase.from('users').insert({ id: userId, email, name, provider: 'email', credits: DEFAULT_CREDITS })
+  if (userError) return res.status(500).json({ error: 'user_create_failed', message: userError.message })
+  await supabase.from('user_settings').upsert({ user_id: userId }, { onConflict: 'user_id' })
 
   const token = signJWT({ userId, email })
   const { data: user } = await supabase.from('users').select('*').eq('id', userId).single()
@@ -146,7 +158,15 @@ export async function getMe(req: Request, res: Response) {
 
 export async function updateProfile(req: Request, res: Response) {
   const { name, organization, role } = req.body
-  const { data, error } = await supabase.from('users').update({ name, organization, role, updated_at: new Date().toISOString() }).eq('id', req.user!.id).select().single()
+  const updates: Record<string, string> = {}
+  if (typeof name === 'string') updates.name = name.trim()
+  if (typeof organization === 'string') updates.organization = organization.trim()
+  if (typeof role === 'string') updates.role = role.trim()
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'no_valid_fields', message: 'No valid profile fields provided.' })
+  }
+
+  const { data, error } = await supabase.from('users').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', req.user!.id).select().single()
   if (error) return res.status(500).json({ error: 'update_failed', message: error.message })
   return res.json({ success: true, user: data })
 }

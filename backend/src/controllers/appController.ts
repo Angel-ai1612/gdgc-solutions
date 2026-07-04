@@ -45,15 +45,15 @@ export async function getReports(req: Request, res: Response) {
   const { status, search, page = '1', limit = '20' } = req.query
   let query = supabase
     .from('verifications')
-    .select('id, file_name, submitted_url, media_type, status, trust_score, created_at')
+    .select('id, file_name, submitted_url, media_type, status, trust_score, created_at', { count: 'exact' })
     .eq('user_id', req.user!.id)
     .order('created_at', { ascending: false })
 
   if (status && status !== 'All') query = query.eq('status', status)
   if (search) query = query.ilike('file_name', `%${search}%`)
 
-  const pageNum = parseInt(page as string)
-  const pageSize = parseInt(limit as string)
+  const pageNum = Math.max(1, parseInt(page as string) || 1)
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit as string) || 20))
   query = query.range((pageNum - 1) * pageSize, pageNum * pageSize - 1)
 
   const { data, error, count } = await query
@@ -138,13 +138,26 @@ export async function downloadCertificate(req: Request, res: Response) {
 // ── ALERTS ────────────────────────────────────────────────────────────────────
 
 export async function getAlerts(req: Request, res: Response) {
-  const { data } = await supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(50)
-  return res.json({ success: true, data: data ?? [] })
+  const [{ data: alerts, error }, { data: readRows }] = await Promise.all([
+    supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(50),
+    supabase.from('user_alert_reads').select('alert_id').eq('user_id', req.user!.id),
+  ])
+  if (error) return res.status(500).json({ error: 'db_error', message: error.message })
+
+  const readIds = new Set((readRows ?? []).map(row => row.alert_id))
+  const data = (alerts ?? []).map(alert => ({ ...alert, is_read: readIds.has(alert.id) || alert.is_read }))
+  return res.json({ success: true, data })
 }
 
 export async function markAlertRead(req: Request, res: Response) {
   const { id } = req.params
-  await supabase.from('alerts').update({ is_read: true }).eq('id', id)
+  const { data: alert } = await supabase.from('alerts').select('id').eq('id', id).single()
+  if (!alert) return res.status(404).json({ error: 'not_found' })
+
+  const { error } = await supabase
+    .from('user_alert_reads')
+    .upsert({ user_id: req.user!.id, alert_id: id }, { onConflict: 'user_id,alert_id' })
+  if (error) return res.status(500).json({ error: 'update_failed', message: error.message })
   return res.json({ success: true })
 }
 
@@ -156,7 +169,23 @@ export async function getSettings(req: Request, res: Response) {
 }
 
 export async function updateSettings(req: Request, res: Response) {
-  const settings = req.body
+  const allowed = [
+    'email_notifications',
+    'alert_notifications',
+    'weekly_reports',
+    'marketing_emails',
+    'dark_mode',
+    'compact_view',
+    'animations',
+    'two_factor',
+    'login_alerts',
+  ]
+  const settings = Object.fromEntries(
+    Object.entries(req.body ?? {}).filter(([key]) => allowed.includes(key))
+  )
+  if (Object.keys(settings).length === 0) {
+    return res.status(400).json({ error: 'no_valid_fields', message: 'No valid settings fields provided.' })
+  }
   const { data, error } = await supabase.from('user_settings')
     .upsert({ user_id: req.user!.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     .select().single()
@@ -167,6 +196,19 @@ export async function updateSettings(req: Request, res: Response) {
 export async function updatePassword(req: Request, res: Response) {
   const { currentPassword, newPassword } = req.body
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'missing_fields' })
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'invalid_fields' })
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'weak_password', message: 'Password must be at least 8 characters.' })
+  }
+
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: req.user!.email,
+    password: currentPassword,
+  })
+  if (signInError) return res.status(401).json({ error: 'invalid_current_password', message: 'Current password is incorrect.' })
+
   const { error } = await supabase.auth.admin.updateUserById(req.user!.id, { password: newPassword })
   if (error) return res.status(400).json({ error: 'update_failed', message: error.message })
   return res.json({ success: true, message: 'Password updated' })

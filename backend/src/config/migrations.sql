@@ -57,6 +57,14 @@ CREATE TABLE public.alerts (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 4b. USER ALERT READ STATE
+CREATE TABLE public.user_alert_reads (
+  user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  alert_id   UUID NOT NULL REFERENCES public.alerts(id) ON DELETE CASCADE,
+  read_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, alert_id)
+);
+
 -- 5. TRUSTED SOURCES
 CREATE TABLE public.trusted_sources (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -109,6 +117,7 @@ CREATE INDEX idx_verifications_created_at ON public.verifications(created_at DES
 CREATE INDEX idx_certificates_user_id ON public.certificates(user_id);
 CREATE INDEX idx_credit_ledger_user_id ON public.credit_ledger(user_id);
 CREATE INDEX idx_alerts_created_at ON public.alerts(created_at DESC);
+CREATE INDEX idx_user_alert_reads_user_id ON public.user_alert_reads(user_id);
 
 -- ── RLS POLICIES ─────────────────────────────────────────────────────────────
 -- Backend uses service role key so RLS is bypassed — but enable it for safety
@@ -117,6 +126,7 @@ ALTER TABLE public.verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.credit_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_alert_reads ENABLE ROW LEVEL SECURITY;
 
 -- ── SEED: TRUSTED SOURCES ────────────────────────────────────────────────────
 INSERT INTO public.trusted_sources (name, domain, category) VALUES
